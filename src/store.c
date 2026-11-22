@@ -243,10 +243,10 @@ int store_get(const char *hash_hex, void **data, size_t *len) {
     return 0;
 }
 
-int snapshot_dir(const char *path) {
-    char *buf = NULL;
-    size_t buf_size = 0;
-    size_t buf_len = 0;
+int snapshot_dir(const char *path, char cascade_tree_hash[HASH_HEX_LEN], struct snapshot_report *sr) {
+    void *buf = NULL;
+    size_t buf_size = 0;        // total allocated size
+    size_t buf_len = 0;         // used size
 
     char tree_hash[HASH_HEX_LEN];
 
@@ -263,6 +263,8 @@ int snapshot_dir(const char *path) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
 
+        printf("[DEBUG] now working on %s\n", entry->d_name);
+
         char full_path[PATH_MAX];
         int n = snprintf(full_path, sizeof full_path, "%s/%s", path, entry->d_name);
 
@@ -271,7 +273,7 @@ int snapshot_dir(const char *path) {
 
         struct stat sb;
 
-        size_t entry_len = 4 + 1 + (HASH_HEX_LEN - 1) + 1 + strlen(entry->d_name) + 1 + 1;  //  tree b058d... file.txt\n\0
+        size_t entry_len = 4 + 1 + (HASH_HEX_LEN - 1) + 1 + strlen(entry->d_name) + 1 + 1;  //  blob b058d... file.txt\n\0
 
         char *tree_entry = malloc(entry_len);
         if (tree_entry == NULL) {
@@ -281,7 +283,7 @@ int snapshot_dir(const char *path) {
             return -1;
         }
 
-        if (lstat(full_path, &sb) == -1) {
+        if (lstat(full_path, &sb) == -1) {          // ignora i link simbolici, da risolvere!! (leaka anche tree_entry per questo)
             perror("lstat failed");
 
             //closedir(dir);
@@ -291,7 +293,7 @@ int snapshot_dir(const char *path) {
         }
 
         if (S_ISREG(sb.st_mode)) {  // it's a file
-            void *file_content = malloc((size_t)sb.st_size);
+            void *file_content = malloc((size_t)sb.st_size);        // ma pk nn allocare dopo che il file è stato aperto?
             if (file_content == NULL) {
                 perror("malloc file_content failed");
                 closedir(dir);
@@ -306,10 +308,12 @@ int snapshot_dir(const char *path) {
 
                 free(file_content);
                 free(tree_entry);
+                //free(buf);
 
-                closedir(dir);
+                //closedir(dir);
+                sr->sr_skipped++;
 
-                return -1;
+                continue;
             }
 
             if (read_all(fd, file_content, (size_t)sb.st_size) == -1) {
@@ -339,6 +343,9 @@ int snapshot_dir(const char *path) {
             free(file_content);
 
             int n = snprintf(tree_entry, entry_len, "blob %s %s\n", hash_hex, entry->d_name);
+
+            printf("[DEBUG] tree_entry=%s\n", tree_entry);
+
             if (n < 0 || (size_t)n >= entry_len) {
                 perror("snprintf failed");
 
@@ -350,7 +357,7 @@ int snapshot_dir(const char *path) {
                 return -1;
             }
 
-            if (buffer_append((void **)&buf, tree_entry, &buf_size, &buf_len, strlen(tree_entry)) == -1) {
+            if (buffer_append(&buf, tree_entry, &buf_size, &buf_len, strlen(tree_entry)) == -1) {
                 perror("buffer_append failed");
                 free(buf);
                 free(tree_entry);
@@ -360,10 +367,14 @@ int snapshot_dir(const char *path) {
             }
 
             free(tree_entry);
+
+            sr->sr_files++;
         }
 
         else if (S_ISDIR(sb.st_mode)) {
-            snapshot_dir(full_path);
+            snapshot_dir(full_path, tree_hash, sr);
+
+            //printf("[DEBUG] tree_hash=%s\n", tree_hash);
 
             int n = snprintf(tree_entry, entry_len, "tree %s %s\n", tree_hash, entry->d_name);
             if (n < 0 || (size_t)n >= entry_len) {
@@ -377,7 +388,7 @@ int snapshot_dir(const char *path) {
                 return -1;
             }
 
-            if (buffer_append((void **)&buf, tree_entry, &buf_size, &buf_len, strlen(tree_entry)) == -1) {
+            if (buffer_append(&buf, tree_entry, &buf_size, &buf_len, strlen(tree_entry)) == -1) {
                 perror("buffer_append failed");
                 free(buf);
                 free(tree_entry);
@@ -387,16 +398,31 @@ int snapshot_dir(const char *path) {
             }
 
             free(tree_entry);
+
+            sr->sr_dirs++;
+        } else {
+            // file not recognized
+
+            free(tree_entry);
+            sr->sr_skipped++;
+            continue;
         }
     }
 
-    if (store_put(buf, buf_size, tree_hash) == -1) {
+    /*
+        buf_size is the allocated size of the buffer
+        buf_len is the total size (which includes unused areas after the realloc, garbage data)
+    */
+    if (store_put(buf, buf_len, tree_hash) == -1) {
         perror("store_put failed");
         free(buf);
         closedir(dir);
 
         return -1;
     }
+
+    if (cascade_tree_hash != NULL)
+        memcpy(cascade_tree_hash, tree_hash, HASH_HEX_LEN);
 
     free(buf);
 
