@@ -1,6 +1,5 @@
-// funziona ma i tree sono rotti
-
 #include "store.h"
+#include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,83 +23,9 @@ static void object_path(const char *hash_hex, char *out, size_t size) {
     snprintf(out, size, "%s/objects/%.2s/%s", store_root, hash_hex, hash_hex + 2);
 }
 
-/* writes buf into fd */
-static int write_all(int fd, const void *buf, size_t len) {
-    const unsigned char *p = buf;
-
-    while (len > 0) {
-        ssize_t w = write(fd, p, len);
-        if (w == -1) {
-            if (errno == EINTR)
-                continue;
-
-            return -1;
-        }
-
-        p += w;
-        len -= w;
-    }
-
-    return 0;
-}
-
-/* read from fd into buf */
-static int read_all(int fd, void *buf, size_t len) {
-    unsigned char *p = buf;
-
-    while (len > 0) {
-        ssize_t r = read(fd, p, len);
-
-        if (r == -1) {
-            if (errno == EINTR)
-                continue;
-
-            return -1;
-        }
-
-        if (r == 0)
-            return -1;      // reached EOF
-
-        p += r;
-        len -= r;
-    }
-
-    return 0;
-}
-
-static int buffer_append(void **buf, const void *in, size_t *buf_size, size_t *buf_len, size_t in_size) {
-    size_t required = *buf_len + in_size;
-
-    if (required > *buf_size) {
-        size_t new_size = *buf_size ? *buf_size : 256;
-
-        while (new_size < required) {
-            if (new_size > SIZE_MAX / 2) {
-                new_size = required;
-                break;
-            }
-
-            new_size *= 2;
-        }
-
-        void *tmp = realloc(*buf, new_size);
-        if (tmp == NULL) {
-            perror("realloc failed");
-            return -1;
-        }
-
-        *buf = tmp;
-        *buf_size = new_size;
-    }
-
-    memcpy((char *)*buf + *buf_len, in, in_size);
-    *buf_len += in_size;
-
-    return 0;
-}
-
 int store_init(const char *root) {
-    char objects[PATH_MAX];
+    char objects[PATH_MAX];         // forse meglio metterle globali e fare delle funzioni per accederci
+    char refs[PATH_MAX];
     int n;
 
     if (sodium_init() < 0) {
@@ -124,6 +49,16 @@ int store_init(const char *root) {
         return -1;
 
     if (mkdir(objects, 0755) == -1 && errno != EEXIST)
+        return -1;
+
+    // create the refs/branches folder
+    n = snprintf(refs, sizeof refs, "%s/refs/branches", objects);
+
+    /* check if the path was truncated */
+    if (n < 0 || (size_t)n >= sizeof objects)
+        return -1;  
+
+    if (mkdir(refs, 0755) == -1 && errno != EEXIST)
         return -1;
 
     return 0;
@@ -410,8 +345,8 @@ int snapshot_dir(const char *path, char cascade_tree_hash[HASH_HEX_LEN], struct 
     }
 
     /*
-        buf_size is the allocated size of the buffer
-        buf_len is the total size (which includes unused areas after the realloc, garbage data)
+        buf_len is the allocated size of the buffer
+        buf_size is the total size (which includes unused areas after the realloc, garbage data)
     */
     if (store_put(buf, buf_len, tree_hash) == -1) {
         perror("store_put failed");
@@ -423,6 +358,9 @@ int snapshot_dir(const char *path, char cascade_tree_hash[HASH_HEX_LEN], struct 
 
     if (cascade_tree_hash != NULL)
         memcpy(cascade_tree_hash, tree_hash, HASH_HEX_LEN);
+
+    else
+        // aggiornare il ref del main
 
     free(buf);
 

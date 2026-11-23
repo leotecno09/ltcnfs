@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "store.h"
+#include "branch.h"
 
 // #define CHECK(cond) do { \
 // 	if (!(cond)) { \
@@ -30,6 +31,22 @@ int cmd_init(int argc, char **argv) {
 	return -1;
 }
 
+int cmd_new_branch(int argc, char **argv) {
+	if (argc != 2) {
+		fprintf(stderr, "usage: %s <branch_name>", argv[0]);
+		return -1;
+	}
+
+	store_init("/tmp/test");
+
+	if (!new_branch("/tmp/test", argv[1], "00000000")) {
+		printf("Branch %s was created successfully\n", argv[1]);
+		return 0;
+	}
+
+	return -1;
+}
+
 int cmd_snapshot(int argc, char **argv) {
 	if (argc != 2) {
 		fprintf(stderr, "usage: %s <path>\n", argv[0]);
@@ -52,6 +69,7 @@ int cmd_snapshot(int argc, char **argv) {
 static const struct command commands[] = {
 	{ "init", cmd_init, 2 },		// args are "init" and "path"
 	{ "snapshot", cmd_snapshot, 2 },
+	{ "branch", cmd_new_branch, 2 }
 };
 
 static size_t cmds_arr_size = sizeof(commands) / sizeof(struct command);
