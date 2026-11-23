@@ -1,13 +1,6 @@
 #ifndef _LTCNFS_UTILS
 #define _LTCNFS_UTILS
 
-#include <stdio.h>
-#include <errno.h>
-#include <stdint.h>
-#include <string.h>
-#include <unistd.h>
-#include <stdlib.h>
-
 /*
     writes buf into a file using the file descriptor
 */
@@ -25,4 +18,9 @@ int read_all(int fd, void *buf, size_t len);
 */
 int buffer_append(void **buf, const void *in, size_t *buf_size, size_t *buf_len, size_t in_size);
 
+
+/*
+    build the path from the store root
+*/
+int repo_path(const struct repo *r, char *out, size_t size, const char *fmt, ...);
 #endif

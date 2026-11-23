@@ -37,7 +37,10 @@ int cmd_new_branch(int argc, char **argv) {
 		return -1;
 	}
 
-	store_init("/tmp/test");
+	if (store_init("/tmp/test") == -1) {
+		perror("store init failed");
+		return -1;
+	}
 
 	if (!new_branch("/tmp/test", argv[1], "00000000")) {
 		printf("Branch %s was created successfully\n", argv[1]);

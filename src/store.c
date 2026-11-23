@@ -1,5 +1,6 @@
 #include "store.h"
 #include "utils.h"
+#include "repo.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,7 +12,7 @@
 #include <sodium.h>
 #include <dirent.h>
 
-static char store_root[PATH_MAX];
+//static char store_root[PATH_MAX];
 
 static void to_hex(const unsigned char *bin, size_t n, char *out) {
     for (size_t i = 0; i < n; i++) {
@@ -19,13 +20,19 @@ static void to_hex(const unsigned char *bin, size_t n, char *out) {
     }
 }
 
-static void object_path(const char *hash_hex, char *out, size_t size) {
-    snprintf(out, size, "%s/objects/%.2s/%s", store_root, hash_hex, hash_hex + 2);
+static void object_path(const struct repo *r, const char *hash_hex, char *out, size_t size) {
+    snprintf(out, size, "%s/objects/%.2s/%s", r->root, hash_hex, hash_hex + 2);
 }
 
-int store_init(const char *root) {
-    char objects[PATH_MAX];         // forse meglio metterle globali e fare delle funzioni per accederci
+int store_init(struct repo *r, const char *root) {
+    /*
+        Serve creare il branch "master" e far puntare HEAD ad esso.
+        Bisogna anche riempire gli altri campi della struttura repo, tra qui "current_branch"
+    */
+
+    char objects[PATH_MAX];
     char refs[PATH_MAX];
+    char branches[PATH_MAX];
     int n;
 
     if (sodium_init() < 0) {
@@ -33,59 +40,79 @@ int store_init(const char *root) {
         return -1;
     }
 
-    n = snprintf(store_root, sizeof store_root, "%s", root);
+    n = snprintf(r->root, sizeof r->root, "%s", root);
 
     /* check if the path was truncated */
-    if (n < 0 || (size_t)n >= sizeof store_root)
+    if (n < 0 || (size_t)n >= sizeof r->root)
         return -1;
 
-    n = snprintf(objects, sizeof objects, "%s/objects", store_root);
+    n = snprintf(objects, sizeof objects, "%s/objects", r->root);
 
     /* check if the path was truncated */
     if (n < 0 || (size_t)n >= sizeof objects)
         return -1;  
 
-    if (mkdir(store_root, 0755) == -1 && errno != EEXIST)
+    if (mkdir(r->root, 0755) == -1 && errno != EEXIST)
         return -1;
 
     if (mkdir(objects, 0755) == -1 && errno != EEXIST)
         return -1;
 
-    // create the refs/branches folder
-    n = snprintf(refs, sizeof refs, "%s/refs/branches", objects);
+    // create the refs folder
+    n = snprintf(refs, sizeof refs, "%s/refs", r->root);
+
+    //printf("[DEBUG] refs=%s\n", refs);
 
     /* check if the path was truncated */
-    if (n < 0 || (size_t)n >= sizeof objects)
-        return -1;  
-
-    if (mkdir(refs, 0755) == -1 && errno != EEXIST)
+    if (n < 0 || (size_t)n >= sizeof refs) {
+        fprintf(stderr, "error: the path of refs was truncated\n");
         return -1;
+    } 
+
+    if (mkdir(refs, 0755) == -1 && errno != EEXIST) {
+        perror("[DEBUG] mkdir failed");
+        return -1;
+    }
+
+    // create the branches folder
+    n = snprintf(branches, sizeof branches, "%s/branches", refs);
+  
+    /* check if the path was truncated */
+    if (n < 0 || (size_t)n >= sizeof branches) {
+        fprintf(stderr, "error: the path of refs was truncated\n");
+        return -1;
+    } 
+
+    if (mkdir(branches, 0755) == -1 && errno != EEXIST) {
+        perror("[DEBUG] mkdir failed");
+        return -1;
+    }
 
     return 0;
 }
 
-int store_exists(const char *hash_hex) {
+int store_exists(const struct repo *r, const char *hash_hex) {
     char path[PATH_MAX];
     struct stat st;
 
-    object_path(hash_hex, path, sizeof path);
+    object_path(r, hash_hex, path, sizeof path);
 
     return stat(path, &st) == 0;
 }
 
-int store_put(const void *data, size_t len, char hash_hex[HASH_HEX_LEN]) {
+int store_put(const struct repo *r, const void *data, size_t len, char hash_hex[HASH_HEX_LEN]) {
     unsigned char hash[crypto_hash_sha256_BYTES];
     //int n;
 
     crypto_hash_sha256(hash, data, len);        // <-- questa calcola l'hash del file
     to_hex(hash, sizeof hash, hash_hex);                // <-- questa lo converte in hex
 
-    if (store_exists(hash_hex))         // deduplication
+    if (store_exists(r, hash_hex))         // deduplication
         return 1;
 
     // we put the blob into the store
     char dir[PATH_MAX];
-    snprintf(dir, sizeof dir, "%s/objects/%.2s", store_root, hash_hex);
+    snprintf(dir, sizeof dir, "%s/objects/%.2s", r->root, hash_hex);
 
     printf("dir=%s\n", dir);
 
@@ -93,7 +120,7 @@ int store_put(const void *data, size_t len, char hash_hex[HASH_HEX_LEN]) {
         return -1;
 
     char tmp_file[PATH_MAX];
-    snprintf(tmp_file, sizeof tmp_file, "%s/objects/tmp_XXXXXX", store_root);
+    snprintf(tmp_file, sizeof tmp_file, "%s/objects/tmp_XXXXXX", r->root);
 
     printf("tmp_file=%s\n", tmp_file);
 
@@ -114,7 +141,7 @@ int store_put(const void *data, size_t len, char hash_hex[HASH_HEX_LEN]) {
     close(tmp_fd);
 
     char final_path[PATH_MAX];
-    object_path(hash_hex, final_path, sizeof final_path);
+    object_path(r, hash_hex, final_path, sizeof final_path);
 
     if (rename(tmp_file, final_path) != 0) {
         perror("rename failed");
@@ -127,7 +154,7 @@ int store_put(const void *data, size_t len, char hash_hex[HASH_HEX_LEN]) {
     return 0;
 }
 
-int store_get(const char *hash_hex, void **data, size_t *len) {
+int store_get(const struct repo *r, const char *hash_hex, void **data, size_t *len) {
     // CONTROLLARE CHE HASH_HEX SIA VALIDO!!
 
     char path[PATH_MAX];
@@ -136,7 +163,7 @@ int store_get(const char *hash_hex, void **data, size_t *len) {
     if (hash_hex == NULL || data == NULL || len == NULL)
         return -1;
 
-    object_path(hash_hex, path, sizeof path);
+    object_path(r, hash_hex, path, sizeof path);
 
     int fd = open(path, O_RDONLY);
     if (fd == -1) {
@@ -178,7 +205,7 @@ int store_get(const char *hash_hex, void **data, size_t *len) {
     return 0;
 }
 
-int snapshot_dir(const char *path, char cascade_tree_hash[HASH_HEX_LEN], struct snapshot_report *sr) {
+int snapshot_dir(const struct repo *r, const char *path, char cascade_tree_hash[HASH_HEX_LEN], struct snapshot_report *sr) {
     void *buf = NULL;
     size_t buf_size = 0;        // total allocated size
     size_t buf_len = 0;         // used size
@@ -264,7 +291,7 @@ int snapshot_dir(const char *path, char cascade_tree_hash[HASH_HEX_LEN], struct 
 
             close(fd);
 
-            if (store_put(file_content, sb.st_size, hash_hex) == -1) {
+            if (store_put(r, file_content, sb.st_size, hash_hex) == -1) {
                 perror("store_put failed");
                 //close(fd);
                 closedir(dir);
@@ -307,7 +334,7 @@ int snapshot_dir(const char *path, char cascade_tree_hash[HASH_HEX_LEN], struct 
         }
 
         else if (S_ISDIR(sb.st_mode)) {
-            snapshot_dir(full_path, tree_hash, sr);
+            snapshot_dir(r, full_path, tree_hash, sr);
 
             //printf("[DEBUG] tree_hash=%s\n", tree_hash);
 
@@ -348,7 +375,7 @@ int snapshot_dir(const char *path, char cascade_tree_hash[HASH_HEX_LEN], struct 
         buf_len is the allocated size of the buffer
         buf_size is the total size (which includes unused areas after the realloc, garbage data)
     */
-    if (store_put(buf, buf_len, tree_hash) == -1) {
+    if (store_put(r, buf, buf_len, tree_hash) == -1) {
         perror("store_put failed");
         free(buf);
         closedir(dir);
@@ -356,16 +383,22 @@ int snapshot_dir(const char *path, char cascade_tree_hash[HASH_HEX_LEN], struct 
         return -1;
     }
 
-    if (cascade_tree_hash != NULL)
-        memcpy(cascade_tree_hash, tree_hash, HASH_HEX_LEN);
-
-    else
-        // aggiornare il ref del main
+    //if (cascade_tree_hash)              // cascade_tree_hash verrà usato poi dal chiamante per fare il commit
+    memcpy(cascade_tree_hash, tree_hash, HASH_HEX_LEN);
 
     free(buf);
 
     closedir(dir);
     return 0;
+}
+
+int commit(const struct repo *r, char tree_root_hash[HASH_HEX_LEN], const char *msg) {
+    // generates a commit, the commit hash will be saved in the current branch file
+    (void) r;
+    (void) tree_root_hash;
+    (void) msg;
+
+    return -1;
 }
 
 /*

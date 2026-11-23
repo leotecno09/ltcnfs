@@ -1,4 +1,12 @@
 #include "utils.h"
+#include "repo.h"
+#include <stdio.h>
+#include <errno.h>
+#include <stdint.h>
+#include <string.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdarg.h>
 
 /* writes buf into fd */
 int write_all(int fd, const void *buf, size_t len) {
@@ -71,6 +79,21 @@ int buffer_append(void **buf, const void *in, size_t *buf_size, size_t *buf_len,
 
     memcpy((char *)*buf + *buf_len, in, in_size);
     *buf_len += in_size;
+
+    return 0;
+}
+
+int repo_path(const struct repo *r, char *out, size_t size, const char *fmt, ...) {
+    int n = snprintf(out, size, "%s/", r->root);
+    if (n < 0 || (size_t)n >= size)
+        return -1;
+
+    va_list args;
+    va_start(args, fmt);
+
+    int m = vsnprintf(out + n, size - n, fmt, args);
+    if (m < 0 || (size_t)m >= size - n)
+        return -1;
 
     return 0;
 }
