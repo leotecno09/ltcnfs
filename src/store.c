@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <sodium.h>
 #include <dirent.h>
+#include <time.h>
 
 //static char store_root[PATH_MAX];
 
@@ -394,10 +395,37 @@ int snapshot_dir(const struct repo *r, const char *path, char cascade_tree_hash[
 
 int commit(const struct repo *r, char tree_root_hash[HASH_HEX_LEN], const char *msg) {
     // generates a commit, the commit hash will be saved in the current branch file
-    (void) r;
-    (void) tree_root_hash;
-    (void) msg;
+    // commit content is: tree <tree_hash>\nparent\n<parent_commit_hash>\ntime\n<time>\nmessage <msg>
+    // magari limitare lunghezza msg
+    time_t curtime;
+    time(&curtime);
 
+    void *buf = NULL;
+    size_t buf_size = 0, buf_len = 0;
+    char line[128];
+    int n;
+
+    n = snprintf(line, sizeof line, "tree %s\n", tree_root_hash);
+    if (n < 0 || (size_t)n >= sizeof line) goto fail;
+    if (buffer_append(&buf, line, &buf_size, &buf_len, (size_t)n) == -1) goto fail;
+
+    if (r->last_commit) {
+        n = snprintf(line, sizeof line, "parent %s\n", r->last_commit);
+        if (n < 0 || (size_t)n >= sizeof line) goto fail;
+        if (buffer_append(&buf, line, &buf_size, &buf_len, (size_t)n) == -1) goto fail;
+    }
+
+    n = snprintf(line, sizeof line, "time %lld\n\nmessage %s\n", curtime, msg);
+    if (n < 0 || (size_t)n >= sizeof line) goto fail;
+    if (buffer_append(&buf, line, &buf_size, &buf_len, (size_t)n) == -1) goto fail;
+
+    // calcolare hash e mettere nello store con store_put
+
+    return 0;
+
+fail:
+    perror("commit failed");
+    free(buf);
     return -1;
 }
 
