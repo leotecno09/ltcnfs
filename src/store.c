@@ -420,6 +420,7 @@ int commit(const struct repo *r, char tree_root_hash[HASH_HEX_LEN], const char *
     if (buffer_append(&buf, line, &buf_size, &buf_len, (size_t)n) == -1) goto fail;
 
     // calcolare hash e mettere nello store con store_put
+    if (store_put(r, buf, buf_len, r->last_commit) == -1) goto fail;
 
     return 0;
 

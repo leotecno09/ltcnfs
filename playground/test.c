@@ -3,6 +3,7 @@
 #include <string.h>
 #include "store.h"
 #include "branch.h"
+#include "repo.h"
 
 // #define CHECK(cond) do { \
 // 	if (!(cond)) { \
@@ -13,17 +14,17 @@
 
 struct command {
 	const char* name;
-	int (*fn)(int argc, char **argv);
+	int (*fn)(int argc, char **argv, struct repo *r);
 	int args;
 };
 
-int cmd_init(int argc, char **argv) {
+int cmd_init(int argc, char **argv, struct repo *r) {
 	if (argc != 2) {
 		fprintf(stderr, "usage: %s <path>\n", argv[0]);
 		return -1;
 	}
 
-	if (!store_init(argv[1])) {
+	if (!store_init(r, argv[1])) {
 		printf("Store initialized successfully in %s\n", argv[1]);
 		return 0;
 	}
@@ -31,18 +32,18 @@ int cmd_init(int argc, char **argv) {
 	return -1;
 }
 
-int cmd_new_branch(int argc, char **argv) {
+int cmd_new_branch(int argc, char **argv, const struct repo *r) {
 	if (argc != 2) {
 		fprintf(stderr, "usage: %s <branch_name>", argv[0]);
 		return -1;
 	}
 
-	if (store_init("/tmp/test") == -1) {
+	if (store_init(r, "/tmp/test") == -1) {
 		perror("store init failed");
 		return -1;
 	}
 
-	if (!new_branch("/tmp/test", argv[1], "00000000")) {
+	if (!new_branch(r, argv[1], "00000000")) {
 		printf("Branch %s was created successfully\n", argv[1]);
 		return 0;
 	}
@@ -50,7 +51,7 @@ int cmd_new_branch(int argc, char **argv) {
 	return -1;
 }
 
-int cmd_snapshot(int argc, char **argv) {
+int cmd_snapshot(int argc, char **argv, const struct repo *r) {
 	if (argc != 2) {
 		fprintf(stderr, "usage: %s <path>\n", argv[0]);
 		return -1;
@@ -58,9 +59,9 @@ int cmd_snapshot(int argc, char **argv) {
 
 	struct snapshot_report rep;
 
-	store_init("/tmp/test");		// da capire come mantenere a ogni comandd!!
+	store_init(r, "/tmp/test");		// da capire come mantenere a ogni comandd!!
 
-	if (!snapshot_dir(argv[1], NULL, &rep)) {
+	if (!snapshot_dir(r, argv[1], NULL, &rep)) {
 		printf("Snapshot of %s done.\n", argv[1]);
 		printf("\nREPORT\nskipped=%lu	files=%lu	dirs=%lu\n", rep.sr_skipped, rep.sr_files, rep.sr_dirs);
 		return 0;
@@ -84,6 +85,7 @@ int main(int argc, char **argv) {
 	}
 	
 	struct command cmd;
+	struct repo r;
 
 	for (size_t i = 0; i < cmds_arr_size; i++) {
 		cmd = commands[i];
@@ -94,7 +96,7 @@ int main(int argc, char **argv) {
 				return -1;
 			}
 
-			return cmd.fn(argc - 1, argv + 1);
+			return cmd.fn(argc - 1, argv + 1, &r);
 		}
 	}
 }
