@@ -3,6 +3,8 @@
 
 #include "store.h"
 
+#define MAX_BRANCH_NAME_LEN 20
+
 /*
     creates a new branch under refs/branches
     the branch will point to the last commit of the working dir

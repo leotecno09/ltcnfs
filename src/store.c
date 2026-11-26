@@ -1,6 +1,7 @@
+#include "repo.h"
 #include "store.h"
 #include "utils.h"
-#include "repo.h"
+#include "branch.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,10 +20,6 @@ static void to_hex(const unsigned char *bin, size_t n, char *out) {
     for (size_t i = 0; i < n; i++) {
         sprintf(out + 2 * i, "%02x", bin[i]);
     }
-}
-
-static void object_path(const struct repo *r, const char *hash_hex, char *out, size_t size) {
-    snprintf(out, size, "%s/objects/%.2s/%s", r->root, hash_hex, hash_hex + 2);
 }
 
 int store_init(struct repo *r, const char *root) {
@@ -89,6 +86,17 @@ int store_init(struct repo *r, const char *root) {
         return -1;
     }
 
+    // create the master branch
+    if (new_branch(r, "master", NULL) == -1) {
+        perror("master branch creation failed");
+        return -1;
+    }
+
+    if (checkout(r, "master") == -1) {
+        perror("checkout on master failed");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -115,7 +123,7 @@ int store_put(const struct repo *r, const void *data, size_t len, char hash_hex[
     char dir[PATH_MAX];
     snprintf(dir, sizeof dir, "%s/objects/%.2s", r->root, hash_hex);
 
-    printf("dir=%s\n", dir);
+    //printf("dir=%s\n", dir);
 
     if (mkdir(dir, 0755) == -1 && errno != EEXIST)      /* if it exists it's not a problem */
         return -1;
@@ -123,7 +131,7 @@ int store_put(const struct repo *r, const void *data, size_t len, char hash_hex[
     char tmp_file[PATH_MAX];
     snprintf(tmp_file, sizeof tmp_file, "%s/objects/tmp_XXXXXX", r->root);
 
-    printf("tmp_file=%s\n", tmp_file);
+    //printf("tmp_file=%s\n", tmp_file);
 
     int tmp_fd = mkstemp(tmp_file);
     if (tmp_fd == -1) {
@@ -409,7 +417,7 @@ int commit(const struct repo *r, char tree_root_hash[HASH_HEX_LEN], const char *
     if (n < 0 || (size_t)n >= sizeof line) goto fail;
     if (buffer_append(&buf, line, &buf_size, &buf_len, (size_t)n) == -1) goto fail;
 
-    if (r->last_commit) {
+    if (strlen(r->last_commit) > 0) {
         n = snprintf(line, sizeof line, "parent %s\n", r->last_commit);
         if (n < 0 || (size_t)n >= sizeof line) goto fail;
         if (buffer_append(&buf, line, &buf_size, &buf_len, (size_t)n) == -1) goto fail;
@@ -421,6 +429,9 @@ int commit(const struct repo *r, char tree_root_hash[HASH_HEX_LEN], const char *
 
     // calcolare hash e mettere nello store con store_put
     if (store_put(r, buf, buf_len, r->last_commit) == -1) goto fail;
+    if (branch_update(r, r->current_branch, r->last_commit) == -1) goto fail;
+
+    free(buf);
 
     return 0;
 

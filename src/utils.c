@@ -1,5 +1,5 @@
-#include "utils.h"
 #include "repo.h"
+#include "utils.h"
 #include <stdio.h>
 #include <errno.h>
 #include <stdint.h>
@@ -96,4 +96,8 @@ int repo_path(const struct repo *r, char *out, size_t size, const char *fmt, ...
         return -1;
 
     return 0;
+}
+
+void object_path(const struct repo *r, const char *hash_hex, char *out, size_t size) {
+    snprintf(out, size, "%s/objects/%.2s/%s", r->root, hash_hex, hash_hex + 2);
 }

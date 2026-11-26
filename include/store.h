@@ -11,6 +11,8 @@ struct snapshot_report {
     unsigned long sr_skipped;
 };
 
+struct repo;
+
 /*
     create, if not exists, root/ and root/objects/. 
     0 = ok, -1 = error
@@ -43,4 +45,8 @@ int store_exists(const struct repo *r, const char *hash_hex);
 */
 int snapshot_dir(const struct repo *r, const char *path, char cascade_tree_hash[HASH_HEX_LEN], struct snapshot_report *sr);
 
+/*
+    make a commit (document me better pls)
+*/
+int commit(const struct repo *r, char tree_root_hash[HASH_HEX_LEN], const char *msg);
 #endif

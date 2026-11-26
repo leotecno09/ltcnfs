@@ -23,4 +23,9 @@ int buffer_append(void **buf, const void *in, size_t *buf_size, size_t *buf_len,
     build the path from the store root
 */
 int repo_path(const struct repo *r, char *out, size_t size, const char *fmt, ...);
+
+/*
+    get the full path of an object starting from its hash
+*/
+void object_path(const struct repo *r, const char *hash_hex, char *out, size_t size);
 #endif
