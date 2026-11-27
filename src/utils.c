@@ -89,13 +89,15 @@ int repo_path(const struct repo *r, char *out, size_t size, const char *fmt, ...
         return -1;
 
     va_list args;
+    
     va_start(args, fmt);
-
     int m = vsnprintf(out + n, size - n, fmt, args);
+    va_end(args);
+
     if (m < 0 || (size_t)m >= size - n)
         return -1;
 
-    return 0;
+    return n + m;
 }
 
 void object_path(const struct repo *r, const char *hash_hex, char *out, size_t size) {

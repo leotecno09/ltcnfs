@@ -1,3 +1,5 @@
+// dovremmo usare più goto e int retval
+
 #include "repo.h"
 #include "branch.h"
 #include "utils.h"
@@ -10,7 +12,7 @@
 
 static int head_write(const struct repo *r, const char *new_branch) {
     char HEAD_TMP[PATH_MAX];
-    char BRANCH_LOCATION[PATH_MAX];
+    char BRANCH_LOCATION[PATH_MAX + 2];
 
     repo_path(r, BRANCH_LOCATION, sizeof BRANCH_LOCATION, "refs/branches/%s", new_branch);
     printf("[DEBUG] BRANCH_LOCATION=%s\n", BRANCH_LOCATION);
@@ -30,7 +32,10 @@ static int head_write(const struct repo *r, const char *new_branch) {
         return -1;
     }
 
-    if (write_all(fd, BRANCH_LOCATION, strlen(BRANCH_LOCATION)) == -1) {
+    // add the '\n' character to the BRANCH_LOCATION
+    int n = repo_path(r, BRANCH_LOCATION, sizeof BRANCH_LOCATION, "refs/branches/%s\n", new_branch);
+
+    if (write_all(fd, BRANCH_LOCATION, (size_t)n) == -1) {
         perror("write failed on temp branch");
         close(fd);
         unlink(HEAD_TMP);
@@ -77,7 +82,11 @@ int branch_update(const struct repo *r, const char *branch_name, const char comm
         return -1;
     }
 
-    if (write_all(tmpfd, commit, HASH_HEX_LEN) == -1) {     // forse il '\0' in commit[] rompe
+    // boh (da rivedere, ottimizzare, sistemare, fare, disfare, ciao)
+    char line[HASH_HEX_LEN + 1];
+    snprintf(line, sizeof line, "%s\n", commit);
+
+    if (write_all(tmpfd, line, HASH_HEX_LEN + 1) == -1) {     // forse il '\0' in commit[] rompe
         perror("write_all failed");
         close(tmpfd);
         unlink(temp_branch_path);
@@ -111,7 +120,7 @@ int new_branch(const struct repo *r, const char *name, const char last_commit[HA
     }
 
     if (last_commit != NULL) {
-        if (write_all(branchf, last_commit, HASH_HEX_LEN) == -1) {
+        if (write_all(branchf, last_commit, HASH_HEX_LEN - 1) == -1) {
             perror("write_all failed");
             close(branchf);
             unlink(TMP_FILE);
